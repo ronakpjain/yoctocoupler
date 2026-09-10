@@ -1,0 +1,5 @@
+/build/
+/downloads/
+/sstate-cache/
+/poky/
+/meta-raspberrypi/

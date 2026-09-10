@@ -1,0 +1,6 @@
+[Match]
+Type=ether
+Name=!veth*
+
+[Network]
+DHCP=yes
