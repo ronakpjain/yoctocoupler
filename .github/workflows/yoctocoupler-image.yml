@@ -1,0 +1,76 @@
+name: Build Yoctocoupler CM5 image
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/yoctocoupler-image.yml"
+      - "kas/**"
+      - "meta-yoctocoupler/**"
+  pull_request:
+    paths:
+      - ".github/workflows/yoctocoupler-image.yml"
+      - "kas/**"
+      - "meta-yoctocoupler/**"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Raspberry Pi CM5 PREEMPT_RT image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v4
+
+      - name: Reclaim runner disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          df -h
+
+      - name: Restore Yocto caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/downloads
+            build/sstate-cache
+          key: yocto-${{ runner.os }}-${{ hashFiles('kas/**', 'meta-yoctocoupler/**') }}
+          restore-keys: |
+            yocto-${{ runner.os }}-
+
+      # The checksum keeps the downloaded build wrapper tied to the reviewed release.
+      - name: Download pinned KAS container wrapper
+        env:
+          KAS_WRAPPER_URL: https://raw.githubusercontent.com/siemens/kas/59e55e4f4e38d659e04de0018c9e5671a2a2fedb/kas-container
+          KAS_WRAPPER_SHA256: 5309424870c8d445800d4d98d064b0f4e3f0126557179ccce686ad4afb6c97e2
+        run: |
+          curl --fail --location --silent --show-error \
+            "${KAS_WRAPPER_URL}" --output "${RUNNER_TEMP}/kas-container"
+          echo "${KAS_WRAPPER_SHA256}  ${RUNNER_TEMP}/kas-container" | sha256sum --check
+          chmod 0755 "${RUNNER_TEMP}/kas-container"
+
+      - name: Build image with KAS
+        env:
+          KAS_IMAGE_VERSION: "4.7"
+          KAS_BUILD_DIR: ${{ github.workspace }}/build
+        run: |
+          "${RUNNER_TEMP}/kas-container" build kas/yoctocoupler-cm5.yml
+
+      - name: Show generated image files
+        run: |
+          find build/tmp/deploy/images/raspberrypi-cm5-io-board \
+            -maxdepth 1 -type f -name 'yoctocoupler-image-*.wic*' -print
+
+      - name: Upload bootable USB image
+        uses: actions/upload-artifact@v4
+        with:
+          name: yoctocoupler-cm5-preempt-rt
+          if-no-files-found: error
+          path: |
+            build/tmp/deploy/images/raspberrypi-cm5-io-board/yoctocoupler-image-*.wic.bz2
+            build/tmp/deploy/images/raspberrypi-cm5-io-board/yoctocoupler-image-*.wic.bmap
