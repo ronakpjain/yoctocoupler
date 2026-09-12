@@ -6,7 +6,7 @@ LICENSE = "MIT"
 require recipes-core/images/core-image-minimal.bb
 
 IMAGE_FEATURES += "ssh-server-openssh"
-IMAGE_INSTALL:append = " rt-tests yoctocoupler-networkd"
+IMAGE_INSTALL:append = " pps-tools rt-tests yoctocoupler-networkd"
 
 # Inject a key only when explicitly supplied; never create a default credential.
 YOCTOCOUPLER_SSH_PUBLIC_KEY ?= ""

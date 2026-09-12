@@ -2,7 +2,7 @@
 
 Minimal 64-bit Yocto image for the Raspberry Pi Compute Module 5 IO Board with:
 
-- Raspberry Pi Linux 6.12 with PREEMPT_RT and 1 kHz timers
+- Raspberry Pi Linux 6.12 with PREEMPT_RT, 1 kHz timers, and GPIO17 PPS
 - systemd-networkd with wired DHCP
 - OpenSSH and `rt-tests`
 
@@ -49,6 +49,7 @@ serial console is `ttyAMA10`.
 zcat /proc/config.gz | grep -E 'CONFIG_(PREEMPT_RT|HZ_1000)='
 systemctl is-active systemd-networkd
 cyclictest --help
+ppstest /dev/pps0
 ```
 
 GitHub Actions builds and uploads the compressed WIC image and bmap file.
