@@ -54,6 +54,38 @@ jobs:
           echo "${KAS_WRAPPER_SHA256}  ${RUNNER_TEMP}/kas-container" | sha256sum --check
           chmod 0755 "${RUNNER_TEMP}/kas-container"
 
+      - name: Preflight kernel append and metadata with KAS
+        env:
+          KAS_IMAGE_VERSION: "4.7"
+          KAS_BUILD_DIR: ${{ github.workspace }}/build
+        run: |
+          "${RUNNER_TEMP}/kas-container" shell kas/yoctocoupler-cm5.yml -c '
+            set -eu
+
+            appends=$(bitbake-layers show-appends)
+            printf "%s\\n" "$appends"
+            if ! printf "%s\\n" "$appends" | grep -Fq "linux-raspberrypi_6.12.bbappend"; then
+              echo "Expected linux-raspberrypi_6.12.bbappend was not found by bitbake-layers show-appends" >&2
+              exit 1
+            fi
+
+            metadata=$(mktemp)
+            trap "rm -f $metadata" EXIT
+            bitbake -e virtual/kernel > "$metadata"
+            if ! grep -Eq "^LINUX_VERSION=\"6[.]12[.]" "$metadata"; then
+              echo "Expected linux-raspberrypi 6.12, but another kernel version is selected" >&2
+              exit 1
+            fi
+            if ! grep "^SRC_URI=" "$metadata" | grep -Fq "file://yoctocoupler-rt.cfg"; then
+              echo "Effective virtual/kernel SRC_URI lacks yoctocoupler-rt.cfg" >&2
+              exit 1
+            fi
+            if ! grep -Eq "^LINUX_VERSION_EXTENSION=\".*-yoctocoupler-rt.*\"$" "$metadata"; then
+              echo "Effective virtual/kernel LINUX_VERSION_EXTENSION lacks -yoctocoupler-rt" >&2
+              exit 1
+            fi
+          '
+
       - name: Build image with KAS
         env:
           KAS_IMAGE_VERSION: "4.7"
