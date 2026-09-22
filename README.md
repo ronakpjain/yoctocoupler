@@ -3,7 +3,7 @@
 Minimal 64-bit Yocto image for the Raspberry Pi Compute Module 5 IO Board with:
 
 - Raspberry Pi Linux 6.12 with PREEMPT_RT, 1 kHz timers, and GPIO17 PPS
-- systemd-networkd with wired DHCP
+- systemd-networkd with static wired networking (`192.168.50.2/24`, gateway `192.168.50.1`, DNS `1.1.1.1`)
 - OpenSSH and `rt-tests`
 
 ## Build
@@ -40,14 +40,19 @@ sudo bmaptool copy "$IMAGE" /dev/sdX
 sync
 ```
 
-After boot, find the DHCP address and connect with `ssh root@<address>`. The
-serial console is `ttyAMA10`.
+For a direct Ethernet connection, configure the host adapter on `192.168.50.0/24`
+(for example, the Mac at `192.168.50.1/24`). After boot, connect with
+`ssh root@192.168.50.2`. The serial console is `ttyAMA10`.
 
 ## Verify
 
 ```sh
 zcat /proc/config.gz | grep -E 'CONFIG_(PREEMPT_RT|HZ_1000)='
 systemctl is-active systemd-networkd
+systemctl is-active systemd-resolved
+ip -4 address show dev eth0
+ip route show default
+resolvectl status eth0
 cyclictest --help
 ppstest /dev/pps0
 ```

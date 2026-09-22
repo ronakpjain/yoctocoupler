@@ -1,8 +1,8 @@
 [Unit]
 Description=Yoctocoupler systemd-networkd bootstrap
 Requires=systemd-networkd.service
-Wants=systemd-networkd-wait-online.service
-After=systemd-networkd.service
+Wants=systemd-networkd-wait-online.service systemd-resolved.service
+After=systemd-networkd.service systemd-resolved.service
 Before=network-online.target
 
 [Service]

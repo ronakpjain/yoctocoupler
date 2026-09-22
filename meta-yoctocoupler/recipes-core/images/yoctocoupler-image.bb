@@ -1,5 +1,5 @@
 SUMMARY = "Minimal real-time image for the Raspberry Pi Compute Module 5"
-DESCRIPTION = "A minimal systemd image for the Raspberry Pi CM5 IO Board with PREEMPT_RT, DHCP networking, OpenSSH, and real-time test tools."
+DESCRIPTION = "A minimal systemd image for the Raspberry Pi CM5 IO Board with PREEMPT_RT, static networking, OpenSSH, and real-time test tools."
 
 LICENSE = "MIT"
 

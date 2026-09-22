@@ -40,7 +40,7 @@ local_conf_header:
     INIT_MANAGER = "systemd"
     # meta-raspberrypi defaults to 6.6; use 6.12 for the RT kernel append.
     PREFERRED_VERSION_linux-raspberrypi = "6.12.%"
-    PACKAGECONFIG:append:pn-systemd = " networkd"
+    PACKAGECONFIG:append:pn-systemd = " networkd resolved"
     RPI_EXTRA_CONFIG:append = " \n dtoverlay=pps-gpio,gpiopin=17 \n"
     BB_NUMBER_THREADS ?= "8"
     PARALLEL_MAKE ?= "-j 8"
