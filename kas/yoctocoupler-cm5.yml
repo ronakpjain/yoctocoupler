@@ -1,7 +1,9 @@
 header:
   version: 14
 
-machine: raspberrypi-cm5-io-board
+# The shared Pi 5 machine includes CM5 device trees.
+# Other CM5 carriers may require their own device tree and boot configuration.
+machine: raspberrypi5
 distro: poky
 target:
   - yoctocoupler-image

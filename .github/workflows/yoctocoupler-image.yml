@@ -95,14 +95,14 @@ jobs:
 
       - name: Show generated image files
         run: |
-          find build/tmp/deploy/images/raspberrypi-cm5-io-board \
+          find build/tmp/deploy/images/raspberrypi5 \
             -maxdepth 1 -type f -name 'yoctocoupler-image-*.wic*' -print
 
-      - name: Upload bootable USB image
+      - name: Upload CM5 image
         uses: actions/upload-artifact@v4
         with:
           name: yoctocoupler-cm5-preempt-rt
           if-no-files-found: error
           path: |
-            build/tmp/deploy/images/raspberrypi-cm5-io-board/yoctocoupler-image-*.wic.bz2
-            build/tmp/deploy/images/raspberrypi-cm5-io-board/yoctocoupler-image-*.wic.bmap
+            build/tmp/deploy/images/raspberrypi5/yoctocoupler-image-*.wic.bz2
+            build/tmp/deploy/images/raspberrypi5/yoctocoupler-image-*.wic.bmap
