@@ -44,5 +44,7 @@ local_conf_header:
     PREFERRED_VERSION_linux-raspberrypi = "6.12.%"
     PACKAGECONFIG:append:pn-systemd = " networkd resolved"
     RPI_EXTRA_CONFIG:append = " \n dtoverlay=pps-gpio,gpiopin=17 \n"
-    BB_NUMBER_THREADS ?= "8"
-    PARALLEL_MAKE ?= "-j 8"
+    # Avoid Raspberry Pi firmware's default one-second pre-kernel delay.
+    BOOT_DELAY = "0"
+    BOOT_DELAY_MS = "0"
+    # Use OpenEmbedded's CPU-affinity-aware defaults instead of a fixed cap.
