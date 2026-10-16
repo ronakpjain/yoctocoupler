@@ -31,6 +31,26 @@ chmod 0755 /tmp/kas-container
 KAS_IMAGE_VERSION=4.7 /tmp/kas-container build kas/yoctocoupler-cm5.yml
 ```
 
+### Download the image built by GitHub Actions
+
+The workflow uploads compressed WIC image output(s) and their small `.bmap`
+sidecars as the `yoctocoupler-cm5-preempt-rt` artifact. This downloads that
+output artifact only; it does not download the Yocto build cache:
+
+```sh
+RUN_ID=$(gh run list --repo ronakpjain/yoctocoupler \
+  --workflow yoctocoupler-image.yml --branch main --status success --limit 1 \
+  --json databaseId --jq '.[0].databaseId')
+[ -n "$RUN_ID" ] || { echo 'No successful image workflow run found.' >&2; exit 1; }
+gh run download "$RUN_ID" --repo ronakpjain/yoctocoupler \
+  --name yoctocoupler-cm5-preempt-rt --dir artifacts
+find artifacts -type f -name 'yoctocoupler-image-*.wic.bz2' -print
+```
+
+Use the resulting `.wic.bz2` directly with either helper below. The workflow
+runs the Yocto build on Ubuntu; this macOS support is for post-processing and
+flashing the downloaded image.
+
 To install a root SSH public key, set it before building. The `kas-container`
 wrapper requires it to be explicitly forwarded into the build container:
 
@@ -63,8 +83,9 @@ the input image is left untouched. It uses `debugfs`/`e2fsck` on the ext4
 rootfs partition, so it does not invoke BitBake, mount the image, or require
 root privileges. It accepts uncompressed `.wic` files too; use `--output` to
 choose another output path and `--force` only to replace an existing output.
-It requires Python 3, `ssh-keygen`, `debugfs`/`e2fsck`, GNU `dd`, and `bzip2`
-for compressed images.
+It requires Python 3, `ssh-keygen`, `debugfs`/`e2fsck`, `dd`, and `bzip2`
+for compressed images. On macOS, install the keg-only e2fsprogs tools with
+`brew install e2fsprogs`; the helper locates them via `brew --prefix`.
 
 The modified image no longer matches the original `.bmap` sidecar. The flash
 helper below uses `bmaptool copy --nobmap` when available, or `dd`, so it does
@@ -88,14 +109,39 @@ scripts/flash-image-to-usb.sh --dry-run "$IMAGE_TO_FLASH" /dev/disk/by-id/usb-RE
 scripts/flash-image-to-usb.sh "$IMAGE_TO_FLASH" /dev/disk/by-id/usb-REPLACE-ME
 ```
 
-Run the script directly on the Linux host, not in the KAS build container. It
-checks the image fits, rejects the current root disk, mounted filesystems, and
-active swap, and rechecks the persistent identifier plus device identity and
-capacity immediately before writing. It fails closed if root/mount/swap
-inspection fails. It then requires the exact `ERASE /dev/...` confirmation and
-requests `sudo` only for the actual flash. Use `--dry-run` to check the
-selection without writing. If Linux does not identify a USB device as
-removable, verify it carefully before using `--allow-nonremovable`.
+Run the script directly on the Linux or macOS host, not in the KAS build
+container. On Linux it checks the image fits, rejects the current root disk,
+mounted filesystems, and active swap, and rechecks device identity and capacity
+immediately before writing. On macOS it uses `diskutil` plist data, checks the
+system/Data/VM APFS backing stores and mounted volumes, and writes through
+`/dev/rdiskN`. Both paths require the exact `ERASE /dev/...` confirmation and
+request `sudo` only for the actual flash. Use `--dry-run` to check the
+selection without writing. Inspection failures abort; the script never
+unmounts devices automatically.
+
+### Flash from macOS
+
+Keep the helper files in `scripts/` together. macOS uses Python 3's standard
+library to inspect `diskutil` plist output; no additional Python packages are
+needed. First inspect external physical disks and unmount the selected whole
+disk. Pass its `/dev/diskN` path (not a partition such as `/dev/diskNs1`);
+the script selects the corresponding raw `/dev/rdiskN` only after its safety
+checks:
+
+```sh
+diskutil list external physical
+# Replace diskN with the verified external whole-disk identifier.
+diskutil unmountDisk /dev/diskN
+scripts/flash-image-to-usb.sh --dry-run "$IMAGE_TO_FLASH" /dev/diskN
+scripts/flash-image-to-usb.sh "$IMAGE_TO_FLASH" /dev/diskN
+```
+
+macOS disk numbers can change after reconnecting devices, so re-run
+`diskutil list external physical` and repeat the dry run if the device is
+reconnected. The script refuses internal, virtual, system-backed, or mounted
+disks and ejects the disk after a successful write. `--allow-nonremovable` can
+be used only when macOS does not mark a verified external disk as USB/removable;
+it never permits an internal or system disk.
 
 On a carrier exposing Ethernet as `eth0`, configure the host adapter on
 `192.168.50.0/24` (for example, the Mac at `192.168.50.1/24`). After boot, connect with

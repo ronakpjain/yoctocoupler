@@ -9,17 +9,19 @@ Write a built WIC image to a USB/removable whole-disk device. Flashing
 replaces its partition table and image region; existing data is not preserved.
 This is not a secure wipe of any extra capacity beyond the image. The script
 requires an interactive typed confirmation and refuses mounted devices and
-the current root disk.
+the current system disk. Linux and macOS are supported; macOS uses diskutil
+and writes through the raw /dev/rdiskN device.
 
 Options:
       --dry-run             Validate and show the selected image/device; do not write
-      --allow-nonremovable  Allow devices not reported as USB/removable by Linux
+      --allow-nonremovable  Allow media not marked USB/removable (never internal disks)
   -h, --help                Show this help
 
-Use a whole disk (for example /dev/sdX or /dev/disk/by-id/usb-...), not a
-partition. Prefer the persistent /dev/disk/by-id path. The script uses
-bmaptool when installed, otherwise dd; compressed .wic.bz2 images are
-supported by both paths.
+Use a whole disk (for example /dev/sdX or /dev/disk/by-id/usb-... on Linux,
+or /dev/diskN on macOS), not a partition. Prefer the persistent
+/dev/disk/by-id path on Linux; macOS disk numbers can change after reconnecting
+a device. Linux uses bmaptool when installed, otherwise dd; macOS uses native
+dd. Compressed .wic.bz2 images are supported on both systems.
 EOF
 }
 
@@ -27,6 +29,8 @@ die() {
   printf 'error: %s\n' "$*" >&2
   exit 1
 }
+
+SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd -P)
 
 allow_nonremovable=0
 dry_run=0
@@ -59,8 +63,31 @@ done
 (($# == 2)) || { usage >&2; die 'provide an image and a whole-disk USB device'; }
 image_arg=$1
 target_arg=$2
-
-if ! image=$(realpath -e -- "$image_arg"); then
+platform=$(uname -s)
+case "$platform" in
+  Linux|Darwin) ;;
+  *) die "unsupported operating system: $platform" ;;
+esac
+if [[ $platform == Linux ]]; then
+  command -v realpath >/dev/null 2>&1 || die 'required tool not found: realpath'
+fi
+resolve_existing() {
+  local path=$1 parent base
+  case "$path" in
+    /*) ;;
+    *) path="$PWD/$path" ;;
+  esac
+  if [[ $platform == Linux ]]; then
+    realpath -e -- "$path"
+  else
+    [[ -e $path ]] || return 1
+    parent=$(dirname "$path")
+    base=$(basename "$path")
+    parent=$(cd "$parent" && pwd -P) || return 1
+    printf '%s/%s\n' "$parent" "$base"
+  fi
+}
+if ! image=$(resolve_existing "$image_arg"); then
   die "image not found: $image_arg"
 fi
 [[ -f $image && -r $image ]] || die "image is not a readable regular file: $image"
@@ -69,21 +96,38 @@ case "$image" in
   *.wic) compressed=0 ;;
   *) die 'image must end in .wic or .wic.bz2' ;;
 esac
-if ! target=$(realpath -e -- "$target_arg"); then
-  die "device not found: $target_arg"
-fi
-[[ -b $target ]] || die "target is not a block device: $target"
 
-for tool in lsblk findmnt realpath grep wc swapon; do
-  command -v "$tool" >/dev/null 2>&1 || die "required safety tool not found: $tool"
-done
+if [[ $platform == Linux ]]; then
+  if ! target=$(resolve_existing "$target_arg"); then
+    die "device not found: $target_arg"
+  fi
+  [[ -b $target ]] || die "target is not a block device: $target"
+  for tool in lsblk findmnt realpath grep wc swapon; do
+    command -v "$tool" >/dev/null 2>&1 || die "required safety tool not found: $tool"
+  done
+  bmaptool_bin=$(command -v bmaptool 2>/dev/null || true)
+  if [[ -z $bmaptool_bin ]]; then
+    command -v dd >/dev/null 2>&1 || die 'install bmaptool or provide dd for the raw-write fallback'
+  fi
+else
+  target_name=${target_arg##*/}
+  target_name=${target_name#r}
+  [[ $target_arg == /dev/disk* || $target_arg == /dev/rdisk* ]] || \
+    die 'on macOS, specify a whole-disk path such as /dev/disk4 (not a partition)'
+  [[ $target_name =~ ^disk[0-9]+$ ]] || \
+    die 'on macOS, specify a whole-disk path such as /dev/disk4 (not a partition)'
+  target_id=$target_name
+  target="/dev/$target_id"
+  command -v python3 >/dev/null 2>&1 || die 'required tool not found: python3'
+  for tool in diskutil mount grep wc; do
+    command -v "$tool" >/dev/null 2>&1 || die "required safety tool not found: $tool"
+  done
+  bmaptool_bin=''
+fi
 if ((compressed)); then
   command -v bzip2 >/dev/null 2>&1 || die 'required tool not found: bzip2'
 fi
-bmaptool_bin=$(command -v bmaptool 2>/dev/null || true)
-if [[ -z $bmaptool_bin ]]; then
-  command -v dd >/dev/null 2>&1 || die 'install bmaptool or provide dd for the raw-write fallback'
-fi
+command -v dd >/dev/null 2>&1 || die 'required tool not found: dd'
 command -v sync >/dev/null 2>&1 || die 'required tool not found: sync'
 
 # Capture fields that normally identify a physical device and its capacity.
@@ -97,14 +141,28 @@ device_fingerprint() {
   done
 }
 
+mac_inspect_target() {
+  python3 "$SCRIPT_DIR/macos-disk-safety.py" "$target_id" "$allow_nonremovable"
+}
+
 target_identity=''
 # Validate the target as a whole disk, prove the root backing chain, and refuse
 # to overwrite mounted filesystems or active swap. Inspection failures abort.
 validate_target() {
-  local current_target device_type removable transport
+  local current_target device_type removable transport transport_lower
   local root_source root_real root_tree mountpoints mount_sources
   local mount_source mount_real mount_tree swap_sources swap_source swap_real swap_tree
-  local current_identity
+  local current_identity mac_snapshot
+
+  if [[ $platform == Darwin ]]; then
+    mac_snapshot=$(mac_inspect_target) || die 'macOS disk inspection failed; refusing to continue'
+    IFS=$'\t' read -r mac_device_id mac_device_bytes mac_current_identity mac_media_name mac_bus mac_raw_device <<< "$mac_snapshot"
+    [[ $mac_device_id == "$target_id" ]] || die 'selected macOS disk identifier changed; refusing to write'
+    if [[ -n $target_identity && $mac_current_identity != "$target_identity" ]]; then
+      die 'target hardware identity or capacity changed after confirmation; nothing was written'
+    fi
+    return
+  fi
 
   current_target=$(realpath -e -- "$target_arg") || die "target identifier no longer resolves: $target_arg"
   [[ $current_target == "$target" ]] || die "target identifier now resolves to a different device: $current_target"
@@ -115,7 +173,8 @@ validate_target() {
 
   removable=$(lsblk --nodeps --noheadings --raw --output RM -- "$current_target") || die 'could not inspect removable status'
   transport=$(lsblk --nodeps --noheadings --raw --output TRAN -- "$current_target") || die 'could not inspect device transport'
-  if [[ $removable != 1 && ${transport,,} != usb && $allow_nonremovable -eq 0 ]]; then
+  transport_lower=$(printf '%s' "$transport" | tr '[:upper:]' '[:lower:]')
+  if [[ $removable != 1 && $transport_lower != usb && $allow_nonremovable -eq 0 ]]; then
     die "Linux does not identify $current_target as USB/removable; verify the device or use --allow-nonremovable"
   fi
 
@@ -176,10 +235,13 @@ validate_target() {
   fi
 }
 validate_target
-
-target_identity=$(device_fingerprint "$target") || die 'could not capture target hardware identity'
+if [[ $platform == Linux ]]; then
+  target_identity=$(device_fingerprint "$target") || die 'could not capture target hardware identity'
+else
+  target_identity=$mac_current_identity
+fi
 if ((compressed)); then
-  if ! image_bytes=$(bzip2 -dc -- "$image" | wc -c); then
+  if ! image_bytes=$(bzip2 -dc "$image" | wc -c); then
     die 'could not decompress the input image to determine its size'
   fi
 else
@@ -191,8 +253,12 @@ image_bytes=${image_bytes//[[:space:]]/}
 device_bytes=''
 check_device_capacity() {
   local current_bytes
-  current_bytes=$(lsblk --bytes --nodeps --noheadings --raw --output SIZE -- "$target") || \
-    die 'could not determine target capacity'
+  if [[ $platform == Linux ]]; then
+    current_bytes=$(lsblk --bytes --nodeps --noheadings --raw --output SIZE -- "$target") || \
+      die 'could not determine target capacity'
+  else
+    current_bytes=$mac_device_bytes
+  fi
   [[ $current_bytes =~ ^[0-9]+$ ]] || die 'could not parse target capacity'
   if [[ -n $device_bytes && $current_bytes != "$device_bytes" ]]; then
     die 'target capacity changed after confirmation; nothing was written'
@@ -204,12 +270,18 @@ check_device_capacity() {
 check_device_capacity
 
 printf 'Image: %s (%s bytes uncompressed)\n' "$image" "$image_bytes"
-printf 'Confirmed identifier: %s\nResolved block device: %s\n' "$target_arg" "$target"
-if [[ $target_arg != /dev/disk/by-id/* ]]; then
-  printf 'For extra protection against device renumbering, prefer /dev/disk/by-id/…\n'
+printf 'Confirmed identifier: %s\nResolved device: %s\n' "$target_arg" "$target"
+if [[ $platform == Linux ]]; then
+  if [[ $target_arg != /dev/disk/by-id/* ]]; then
+    printf 'For extra protection against device renumbering, prefer /dev/disk/by-id/…\n'
+  fi
+  printf 'Device and hardware identity:\n'
+  lsblk --list --paths --output NAME,TYPE,TRAN,RM,SIZE,MODEL,SERIAL,WWN,MAJ:MIN -- "$target"
+else
+  printf 'Device and hardware identity: %s; bus=%s; media=%s; capacity=%s bytes\n' \
+    "$mac_device_id" "$mac_bus" "$mac_media_name" "$mac_device_bytes"
+  printf 'Write node: %s (macOS disk numbers can change after reconnecting devices)\n' "$mac_raw_device"
 fi
-printf 'Device and hardware identity:\n'
-lsblk --list --paths --output NAME,TYPE,TRAN,RM,SIZE,MODEL,SERIAL,WWN,MAJ:MIN -- "$target"
 if [[ -n $bmaptool_bin ]]; then
   printf 'Write method: bmaptool copy --nobmap\n'
 else
@@ -226,27 +298,39 @@ printf 'Type "ERASE %s" to continue: ' "$target_arg"
 IFS= read -r confirmation || die 'confirmation input was closed; nothing was written'
 [[ $confirmation == "ERASE $target_arg" ]] || die 'confirmation did not match; nothing was written'
 
-if ((EUID == 0)); then
-  ROOT=()
-else
+if ((EUID != 0)); then
   command -v sudo >/dev/null 2>&1 || die 'sudo is required to write to the USB device'
   sudo -v || die 'could not obtain sudo authorization'
-  ROOT=(sudo)
 fi
 run_root() {
-  "${ROOT[@]}" "$@"
+  if ((EUID == 0)); then
+    "$@"
+  else
+    sudo "$@"
+  fi
 }
 
 # Resolve the persistent identifier, identity, root/mount/swap ancestry and
 # capacity again immediately before opening the destination for writing.
 validate_target
 check_device_capacity
-if [[ -n $bmaptool_bin ]]; then
-  run_root "$bmaptool_bin" copy --nobmap "$image" "$target_arg"
-elif ((compressed)); then
-  bzip2 -dc -- "$image" | run_root dd of="$target_arg" bs=4M conv=fsync status=progress
+if [[ $platform == Linux ]]; then
+  if [[ -n $bmaptool_bin ]]; then
+    run_root "$bmaptool_bin" copy --nobmap "$image" "$target_arg"
+  elif ((compressed)); then
+    bzip2 -dc "$image" | run_root dd of="$target_arg" bs=4M conv=fsync status=progress
+  else
+    run_root dd if="$image" of="$target_arg" bs=4M conv=fsync status=progress
+  fi
+  run_root sync
+  printf 'Flash completed and synchronized. You can safely eject %s.\n' "$target_arg"
 else
-  run_root dd if="$image" of="$target_arg" bs=4M conv=fsync status=progress
+  if ((compressed)); then
+    bzip2 -dc "$image" | run_root dd of="$mac_raw_device" bs=4m
+  else
+    run_root dd if="$image" of="$mac_raw_device" bs=4m
+  fi
+  run_root sync
+  run_root diskutil eject "$target"
+  printf 'Flash completed, synchronized, and ejected: %s\n' "$target_arg"
 fi
-run_root sync
-printf 'Flash completed and synchronized. You can safely eject %s.\n' "$target_arg"
