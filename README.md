@@ -44,6 +44,33 @@ KAS_IMAGE_VERSION=4.7 /tmp/kas-container \
 Without a key, the root account remains locked. Build artifacts are written to
 `build/tmp/deploy/images/raspberrypi5/`.
 
+### Add a key to an already-built image (no rebuild)
+
+Use the helper to create a new image copy with your public key installed in
+`/root/.ssh/authorized_keys`:
+
+```sh
+IMAGE=$(find build/tmp/deploy/images/raspberrypi5 \
+  -maxdepth 1 -type f -name 'yoctocoupler-image-raspberrypi5.rootfs-*.wic.bz2' \
+  ! -name '*-with-ssh-key.wic.bz2' -print -quit)
+scripts/add-ssh-key-to-image.sh "$IMAGE" ~/.ssh/id_ed25519.pub
+KEYED_IMAGE="${IMAGE%.wic.bz2}-with-ssh-key.wic.bz2"
+```
+
+The helper appends the key (without duplicating existing entries), applies
+root-only SSH key permissions, and writes a sibling `*-with-ssh-key.wic.bz2`;
+the input image is left untouched. It uses `debugfs`/`e2fsck` on the ext4
+rootfs partition, so it does not invoke BitBake, mount the image, or require
+root privileges. It accepts uncompressed `.wic` files too; use `--output` to
+choose another output path and `--force` only to replace an existing output.
+It requires Python 3, `ssh-keygen`, `debugfs`/`e2fsck`, GNU `dd`, and `bzip2`
+for compressed images.
+
+The modified image no longer matches the original `.bmap` sidecar. To flash it
+with `bmaptool`, use `bmaptool copy --nobmap "$KEYED_IMAGE" /dev/sdX` or create
+a new bmap for the modified image. Without a supplied public key, the root
+account remains locked.
+
 ## Flash
 
 Ensure the CM5 bootloader and carrier support the chosen boot medium (USB, SD,
@@ -51,7 +78,8 @@ or eMMC). Write the image to that medium (this erases the target device):
 
 ```sh
 IMAGE=$(find build/tmp/deploy/images/raspberrypi5 \
-  -maxdepth 1 -name '*.rootfs.wic.bz2' -print -quit)
+  -maxdepth 1 -type f -name 'yoctocoupler-image-raspberrypi5.rootfs-*.wic.bz2' \
+  ! -name '*-with-ssh-key.wic.bz2' -print -quit)
 sudo bmaptool copy "$IMAGE" /dev/sdX
 sync
 ```
