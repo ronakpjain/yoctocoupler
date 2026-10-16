@@ -66,23 +66,36 @@ choose another output path and `--force` only to replace an existing output.
 It requires Python 3, `ssh-keygen`, `debugfs`/`e2fsck`, GNU `dd`, and `bzip2`
 for compressed images.
 
-The modified image no longer matches the original `.bmap` sidecar. To flash it
-with `bmaptool`, use `bmaptool copy --nobmap "$KEYED_IMAGE" /dev/sdX` or create
-a new bmap for the modified image. Without a supplied public key, the root
-account remains locked.
+The modified image no longer matches the original `.bmap` sidecar. The flash
+helper below uses `bmaptool copy --nobmap` when available, or `dd`, so it does
+not reuse a stale map. Without a supplied public key, the root account remains
+locked.
 
-## Flash
+## Flash to USB
 
-Ensure the CM5 bootloader and carrier support the chosen boot medium (USB, SD,
-or eMMC). Write the image to that medium (this erases the target device):
+Ensure the CM5 bootloader and carrier support the chosen USB boot medium. Use
+a whole-disk USB device (not a partition); the example defaults to the keyed
+copy and can be changed to the stock image if desired:
 
 ```sh
 IMAGE=$(find build/tmp/deploy/images/raspberrypi5 \
   -maxdepth 1 -type f -name 'yoctocoupler-image-raspberrypi5.rootfs-*.wic.bz2' \
   ! -name '*-with-ssh-key.wic.bz2' -print -quit)
-sudo bmaptool copy "$IMAGE" /dev/sdX
-sync
+KEYED_IMAGE="${IMAGE%.wic.bz2}-with-ssh-key.wic.bz2"
+IMAGE_TO_FLASH="$KEYED_IMAGE" # Set to "$IMAGE" for the unmodified image
+lsblk -p -o NAME,TRAN,RM,SIZE,MODEL
+scripts/flash-image-to-usb.sh --dry-run "$IMAGE_TO_FLASH" /dev/disk/by-id/usb-REPLACE-ME
+scripts/flash-image-to-usb.sh "$IMAGE_TO_FLASH" /dev/disk/by-id/usb-REPLACE-ME
 ```
+
+Run the script directly on the Linux host, not in the KAS build container. It
+checks the image fits, rejects the current root disk, mounted filesystems, and
+active swap, and rechecks the persistent identifier plus device identity and
+capacity immediately before writing. It fails closed if root/mount/swap
+inspection fails. It then requires the exact `ERASE /dev/...` confirmation and
+requests `sudo` only for the actual flash. Use `--dry-run` to check the
+selection without writing. If Linux does not identify a USB device as
+removable, verify it carefully before using `--allow-nonremovable`.
 
 On a carrier exposing Ethernet as `eth0`, configure the host adapter on
 `192.168.50.0/24` (for example, the Mac at `192.168.50.1/24`). After boot, connect with
