@@ -1,17 +1,19 @@
 SUMMARY = "Minimal real-time image for the Raspberry Pi Compute Module 5"
-DESCRIPTION = "A minimal systemd image for Raspberry Pi CM5 with PREEMPT_RT, static networking, OpenSSH, and real-time test tools."
+DESCRIPTION = "A minimal headless systemd image for Raspberry Pi CM5 with PREEMPT_RT, GPIO PPS, static networking, and OpenSSH."
 
 LICENSE = "MIT"
 
 require recipes-core/images/core-image-minimal.bb
 
 IMAGE_FEATURES += "ssh-server-openssh"
-IMAGE_INSTALL:append = " pps-tools rt-tests yoctocoupler-networkd"
+IMAGE_INSTALL:append = " kernel-module-pps-gpio yoctocoupler-networkd"
 
 # Inject a key only when explicitly supplied; never create a default credential.
 YOCTOCOUPLER_SSH_PUBLIC_KEY ?= ""
 
 ROOTFS_POSTPROCESS_COMMAND:append = " yoctocoupler_install_ssh_key;"
+# Changes to the supplied key must regenerate the root filesystem.
+do_rootfs[vardeps] += "YOCTOCOUPLER_SSH_PUBLIC_KEY"
 
 yoctocoupler_install_ssh_key() {
     if [ -z "${YOCTOCOUPLER_SSH_PUBLIC_KEY}" ]; then
