@@ -147,6 +147,59 @@ On a carrier exposing Ethernet as `eth0`, configure the host adapter on
 `192.168.50.0/24` (for example, the Mac at `192.168.50.1/24`). After boot, connect with
 `ssh root@192.168.50.2`. The serial console is `ttyAMA10`.
 
+## Run in QEMU
+
+The Pi 5 QEMU model is pinned as an optional top-level submodule at
+`tools/rpi5-machine`; it is host-side test tooling, not a Yocto layer or part
+of the target image. Initialize and build it once (see [its README](tools/rpi5-machine/README.md)
+for host build dependencies):
+
+```sh
+git submodule update --init --recursive tools/rpi5-machine
+make -C tools/rpi5-machine setup build
+```
+
+Boot the newest unmodified WIC image with its current deployment kernel, or
+pass a specific image together with the kernel built for that image:
+
+```sh
+scripts/run-image-in-qemu.sh
+KERNEL=build/tmp/deploy/images/raspberrypi5/Image
+scripts/run-image-in-qemu.sh --kernel "$KERNEL" "$KEYED_IMAGE"
+```
+
+The runner uses Bash and native host utilities, and supports Linux and macOS
+when given a QEMU binary built for that host with the `raspi5b` model. The
+fork's setup scripts are less portable: they require Bash 4 and GNU coreutils
+(in particular GNU `realpath`). On macOS, install Homebrew `bash` and
+`coreutils`, put them first in `PATH`, and install equivalents of the fork's
+listed build dependencies; for example:
+
+```sh
+export PATH="$(brew --prefix bash)/bin:$(brew --prefix coreutils)/libexec/gnubin:$PATH"
+```
+
+This QEMU-fork build path has not been tested here. You can also select a
+host-compatible binary with `--qemu PATH`. The runner boots the
+Yocto kernel directly (not the Pi firmware or bootloader), attaches a temporary
+copy of the WIC as the SD card, and prints the serial console on `ttyAMA10`.
+The input image is left untouched. For explicit WIC paths, it requires
+`--kernel` (or `KERNEL_IMAGE`) to avoid pairing an older root filesystem with a
+newer kernel and mismatched modules. This is not a test of the CM5 carrier's
+Ethernet, GPIO/PPS wiring, or physical-board latency.
+
+An optional SSH forward attaches a virtual IGB NIC:
+
+```sh
+scripts/run-image-in-qemu.sh \
+  --ssh-forward 2222 --kernel "$KERNEL" "$KEYED_IMAGE"
+ssh -p 2222 root@127.0.0.1
+```
+
+SSH forwarding requires both an authorized root key and `kernel-module-igb`
+in the guest image; the minimal production image intentionally includes
+neither a default key nor that test NIC module.
+
 ## Verify
 
 ```sh

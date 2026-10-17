@@ -1,0 +1,3 @@
+[submodule "tools/rpi5-machine"]
+	path = tools/rpi5-machine
+	url = https://github.com/hatter6822/rpi5_machine.git
