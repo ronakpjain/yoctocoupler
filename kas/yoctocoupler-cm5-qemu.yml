@@ -1,0 +1,10 @@
+header:
+  version: 14
+  includes:
+    - kas/yoctocoupler-cm5.yml
+
+local_conf_header:
+  yoctocoupler-qemu: |
+    YOCTOCOUPLER_QEMU = "1"
+    IMAGE_INSTALL:append:pn-yoctocoupler-image = " kernel-module-igb"
+    KERNEL_MODULE_AUTOLOAD:append = " igb"

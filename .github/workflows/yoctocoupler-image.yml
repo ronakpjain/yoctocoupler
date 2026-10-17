@@ -70,7 +70,8 @@ jobs:
             fi
 
             metadata=$(mktemp)
-            trap "rm -f $metadata" EXIT
+            image_metadata=$(mktemp)
+            trap "rm -f $metadata $image_metadata" EXIT
             bitbake -e virtual/kernel > "$metadata"
             if ! grep -Eq "^LINUX_VERSION=\"6[.]12[.]" "$metadata"; then
               echo "Expected linux-raspberrypi 6.12, but another kernel version is selected" >&2
@@ -82,6 +83,16 @@ jobs:
             fi
             if ! grep -Eq "^LINUX_VERSION_EXTENSION=\".*-yoctocoupler-rt.*\"$" "$metadata"; then
               echo "Effective virtual/kernel LINUX_VERSION_EXTENSION lacks -yoctocoupler-rt" >&2
+              exit 1
+            fi
+            if grep "^SRC_URI=" "$metadata" | grep -Fq "yoctocoupler-qemu-igb.cfg"; then
+              echo "Hardware kernel unexpectedly includes the QEMU-only igb fragment" >&2
+              exit 1
+            fi
+
+            bitbake -e yoctocoupler-image > "$image_metadata"
+            if grep "^IMAGE_INSTALL=" "$image_metadata" | grep -Fq "kernel-module-igb"; then
+              echo "Hardware image unexpectedly includes kernel-module-igb" >&2
               exit 1
             fi
           '
@@ -106,3 +117,60 @@ jobs:
           path: |
             build/tmp/deploy/images/raspberrypi5/yoctocoupler-image-*.wic.bz2
             build/tmp/deploy/images/raspberrypi5/yoctocoupler-image-*.wic.bmap
+
+      - name: Preflight QEMU-only IGB configuration with KAS
+        env:
+          KAS_IMAGE_VERSION: "4.7"
+          KAS_BUILD_DIR: ${{ github.workspace }}/build
+        run: |
+          "${RUNNER_TEMP}/kas-container" shell kas/yoctocoupler-cm5-qemu.yml -c '
+            set -eu
+
+            kernel_metadata=$(mktemp)
+            image_metadata=$(mktemp)
+            trap "rm -f $kernel_metadata $image_metadata" EXIT
+            bitbake -e virtual/kernel > "$kernel_metadata"
+            if ! grep "^SRC_URI=" "$kernel_metadata" | grep -Fq "yoctocoupler-qemu-igb.cfg"; then
+              echo "QEMU kernel metadata lacks the igb config fragment" >&2
+              exit 1
+            fi
+            if ! grep "^KERNEL_MODULE_AUTOLOAD=" "$kernel_metadata" | grep -Fq "igb"; then
+              echo "QEMU kernel metadata does not autoload igb" >&2
+              exit 1
+            fi
+
+            bitbake -e yoctocoupler-image > "$image_metadata"
+            if ! grep "^IMAGE_INSTALL=" "$image_metadata" | grep -Fq "kernel-module-igb"; then
+              echo "QEMU image metadata does not install kernel-module-igb" >&2
+              exit 1
+            fi
+          '
+
+      - name: Remove hardware image outputs before QEMU build
+        run: |
+          find build/tmp/deploy/images/raspberrypi5 -maxdepth 1 -type f \
+            \( -name 'yoctocoupler-image-*.wic*' -o -name Image \) -delete
+
+      - name: Build QEMU-only image with KAS
+        env:
+          KAS_IMAGE_VERSION: "4.7"
+          KAS_BUILD_DIR: ${{ github.workspace }}/build
+        run: |
+          "${RUNNER_TEMP}/kas-container" build kas/yoctocoupler-cm5-qemu.yml
+
+      - name: Stage QEMU image and matching kernel
+        run: |
+          deploy=build/tmp/deploy/images/raspberrypi5
+          test -s "$deploy/Image"
+          mkdir -p qemu-image-artifacts
+          cp -L "$deploy/Image" qemu-image-artifacts/Image
+          cp "$deploy"/yoctocoupler-image-*.wic.bz2 qemu-image-artifacts/
+          cp "$deploy"/yoctocoupler-image-*.wic.bmap qemu-image-artifacts/
+          find qemu-image-artifacts -maxdepth 1 -type f -print
+
+      - name: Upload QEMU-only image and matching kernel
+        uses: actions/upload-artifact@v4
+        with:
+          name: yoctocoupler-cm5-qemu-preempt-rt
+          if-no-files-found: error
+          path: qemu-image-artifacts/*

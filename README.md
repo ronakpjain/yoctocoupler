@@ -197,17 +197,30 @@ The input image is left untouched. For explicit WIC paths, it requires
 newer kernel and mismatched modules. This is not a test of the CM5 carrier's
 Ethernet, GPIO/PPS wiring, or physical-board latency.
 
-An optional SSH forward attaches a virtual IGB NIC:
+The hardware image intentionally omits the QEMU-only `kernel-module-igb`.
+The workflow also publishes a separate `yoctocoupler-cm5-qemu-preempt-rt`
+artifact containing that module and its matching kernel `Image`; the normal
+hardware artifact remains unchanged. Download the QEMU artifact, add your
+public key to a copy, and boot it with SSH forwarding:
 
 ```sh
-scripts/run-image-in-qemu.sh \
-  --ssh-forward 2222 --kernel "$KERNEL" "$KEYED_IMAGE"
+RUN_ID=$(gh run list --repo ronakpjain/yoctocoupler \
+  --workflow yoctocoupler-image.yml --branch main --status success --limit 1 \
+  --json databaseId --jq '.[0].databaseId')
+[ -n "$RUN_ID" ] || { echo 'No successful image workflow run found.' >&2; exit 1; }
+gh run download "$RUN_ID" --repo ronakpjain/yoctocoupler \
+  --name yoctocoupler-cm5-qemu-preempt-rt --dir qemu-artifacts
+IMAGE=$(find qemu-artifacts -type f -name 'yoctocoupler-image-*.wic.bz2' -print -quit)
+[ -n "$IMAGE" ] || { echo 'No QEMU WIC image found.' >&2; exit 1; }
+KERNEL=qemu-artifacts/Image
+scripts/add-ssh-key-to-image.sh "$IMAGE" ~/.ssh/id_ed25519.pub
+KEYED_IMAGE="${IMAGE%.wic.bz2}-with-ssh-key.wic.bz2"
+scripts/run-image-in-qemu.sh --ssh-forward 2222 --kernel "$KERNEL" "$KEYED_IMAGE"
 ssh -p 2222 root@127.0.0.1
 ```
 
-SSH forwarding requires both an authorized root key and `kernel-module-igb`
-in the guest image; the minimal production image intentionally includes
-neither a default key nor that test NIC module.
+SSH forwarding needs both the authorized root key and `kernel-module-igb`;
+both are present only in the QEMU-specific image after you inject your key.
 
 ## Verify
 
