@@ -151,13 +151,22 @@ On a carrier exposing Ethernet as `eth0`, configure the host adapter on
 
 The Pi 5 QEMU model is pinned as an optional top-level submodule at
 `tools/rpi5-machine`; it is host-side test tooling, not a Yocto layer or part
-of the target image. Initialize and build it once (see [its README](tools/rpi5-machine/README.md)
-for host build dependencies):
+of the target image. Build it once with the helper (see [its README](tools/rpi5-machine/README.md)
+for the full dependency list):
 
 ```sh
-git submodule update --init --recursive tools/rpi5-machine
-make -C tools/rpi5-machine setup build
+scripts/build-rpi5-qemu.sh
 ```
+
+On macOS, the helper arranges Homebrew Bash and GNU coreutils for the fork's
+setup scripts, supplies Homebrew libfdt include/link paths for `dtmerge`, and
+passes `--disable-pvg` to avoid compiling Apple's obsolete Paravirtualized
+Graphics API (the `-nographic` Pi 5 run does not use it). It uses four Ninja
+workers by default; adjust with `--jobs N`. Install Xcode Command Line Tools
+if needed. To have the helper install its Homebrew prerequisites first, run
+`scripts/build-rpi5-qemu.sh --install-deps`. The build-only GNU coreutils path
+is scoped to the helper; do not export it globally when running the image
+runner, which uses macOS's native `stat -f` syntax.
 
 Boot the newest unmodified WIC image with its current deployment kernel, or
 pass a specific image together with the kernel built for that image:
