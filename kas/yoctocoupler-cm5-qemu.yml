@@ -1,4 +1,4 @@
-# Development image for QEMU: IGB networking and virtual CAN, no MCP251XFD.
+# Development image for QEMU: IGB networking and virtual CAN.
 header:
   version: 14
   includes:
