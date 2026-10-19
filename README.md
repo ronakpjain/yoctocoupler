@@ -30,7 +30,7 @@ profile.
 | Intended target | Physical CM5 and its carrier | QEMU `raspi5b` model |
 | KAS entry point | `kas/yoctocoupler-cm5.yml` | `kas/yoctocoupler-cm5-qemu.yml` |
 | Actions artifact | `yoctocoupler-cm5-preempt-rt` | `yoctocoupler-cm5-qemu-preempt-rt` |
-| MCP251XFD SPI CAN driver | Included; carrier overlay required | Explicitly disabled |
+| MCP251XFD SPI CAN driver | Included; carrier overlay required | Not requested or installed |
 | IGB emulated Ethernet driver | Not added | Included and autoloaded |
 | Virtual CAN | No setup/package added | `vcan` autoloaded; `vcan0` brought up at boot |
 | Intended deployment | Flash to hardware | Run with matching kernel `Image` in QEMU |
@@ -51,7 +51,7 @@ kas/yoctocoupler-common.yml      # Shared BSP pins, machine, distro and system p
 Kernel fragments follow the same boundary: `yoctocoupler-rt.cfg` and
 `yoctocoupler-can.cfg` are shared; `yoctocoupler-hardware-can.cfg` is
 production-only; `yoctocoupler-qemu-igb.cfg` contains the dev/QEMU driver policy
-(IGB + VCAN, MCP251XFD disabled). `YOCTOCOUPLER_QEMU` selects the kernel policy
+(IGB + VCAN; no MCP251XFD override). `YOCTOCOUPLER_QEMU` selects the kernel policy
 and is set explicitly by each profile. Select a profile rather than overriding
 this flag in isolation, so kernel drivers and installed packages stay aligned.
 
@@ -247,7 +247,7 @@ Ethernet, GPIO/PPS wiring, or physical-board latency.
 
 Both image variants include SocketCAN raw sockets. Only the production hardware
 variant includes the `mcp251xfd` driver for MCP2517FD/MCP2518FD SPI controllers;
-the QEMU variant explicitly disables it. On hardware, supply a carrier-specific
+the QEMU profile does not request or install it (the BSP kernel default is left unchanged). On hardware, supply a carrier-specific
 device tree/overlay describing the SPI bus, chip select, interrupt GPIO, and
 oscillator; no wiring-specific overlay is enabled by default. The driver loads
 through device discovery. Configure the resulting `can0` with the bitrates and
