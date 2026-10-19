@@ -199,8 +199,9 @@ Ethernet, GPIO/PPS wiring, or physical-board latency.
 
 ### CAN support
 
-Both image variants include SocketCAN raw sockets and the `mcp251xfd` driver
-for MCP2517FD/MCP2518FD SPI controllers. On hardware, supply a carrier-specific
+Both image variants include SocketCAN raw sockets. Only the production hardware
+variant includes the `mcp251xfd` driver for MCP2517FD/MCP2518FD SPI controllers;
+the QEMU variant explicitly disables it. On hardware, supply a carrier-specific
 device tree/overlay describing the SPI bus, chip select, interrupt GPIO, and
 oscillator; no wiring-specific overlay is enabled by default. The driver loads
 through device discovery. Configure the resulting `can0` with the bitrates and

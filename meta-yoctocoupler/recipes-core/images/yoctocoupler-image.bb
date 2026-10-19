@@ -6,7 +6,8 @@ LICENSE = "MIT"
 require recipes-core/images/core-image-minimal.bb
 
 IMAGE_FEATURES += "ssh-server-openssh"
-IMAGE_INSTALL:append = " kernel-module-pps-gpio kernel-module-mcp251xfd kernel-module-can-raw yoctocoupler-networkd"
+IMAGE_INSTALL:append = " kernel-module-pps-gpio kernel-module-can-raw yoctocoupler-networkd"
+IMAGE_INSTALL:append = "${@bb.utils.contains('YOCTOCOUPLER_QEMU', '1', '', ' kernel-module-mcp251xfd', d)}"
 
 # Inject a key only when explicitly supplied; never create a default credential.
 YOCTOCOUPLER_SSH_PUBLIC_KEY ?= ""
