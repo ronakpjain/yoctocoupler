@@ -19,9 +19,49 @@ options before flashing. The GPIO17 PPS overlay requires the PPS signal on
 that pin; the included network configuration only matches `eth0` and a direct
 `192.168.50.0/24` connection. Adapt these for your carrier as needed.
 
+## Image variants: production vs development
+
+Choose exactly one build profile. Both use the same minimal image recipe and
+shared settings, but the dev/QEMU profile does **not** inherit the production
+profile.
+
+| | Hardware / production | Development / QEMU |
+|---|---|---|
+| Intended target | Physical CM5 and its carrier | QEMU `raspi5b` model |
+| KAS entry point | `kas/yoctocoupler-cm5.yml` | `kas/yoctocoupler-cm5-qemu.yml` |
+| Actions artifact | `yoctocoupler-cm5-preempt-rt` | `yoctocoupler-cm5-qemu-preempt-rt` |
+| MCP251XFD SPI CAN driver | Included; carrier overlay required | Explicitly disabled |
+| IGB emulated Ethernet driver | Not added | Included and autoloaded |
+| Virtual CAN | No setup/package added | `vcan` autoloaded; `vcan0` brought up at boot |
+| Intended deployment | Flash to hardware | Run with matching kernel `Image` in QEMU |
+
+**Shared:** PREEMPT_RT, SocketCAN raw sockets, GPIO PPS support, static wired
+networking, systemd, OpenSSH, and public-key-only root access.
+“Development” here means the QEMU networking/virtual-CAN additions—not a compiler,
+SDK, desktop, or a general-purpose development distribution.
+
+Build configuration is organized as:
+
+```text
+kas/yoctocoupler-common.yml      # Shared BSP pins, machine, distro and system policy
+├── yoctocoupler-cm5.yml         # Production-only MCP251XFD package
+└── yoctocoupler-cm5-qemu.yml    # QEMU-only IGB, VCAN and vcan0 configuration
+```
+
+Kernel fragments follow the same boundary: `yoctocoupler-rt.cfg` and
+`yoctocoupler-can.cfg` are shared; `yoctocoupler-hardware-can.cfg` is
+production-only; `yoctocoupler-qemu-igb.cfg` contains the dev/QEMU driver policy
+(IGB + VCAN, MCP251XFD disabled). `YOCTOCOUPLER_QEMU` selects the kernel policy
+and is set explicitly by each profile. Select a profile rather than overriding
+this flag in isolation, so kernel drivers and installed packages stay aligned.
+
+Both profiles currently produce the same WIC filename pattern. Keep downloaded
+artifacts in separate directories and never substitute a QEMU WIC for the
+production artifact when flashing hardware.
+
 ## Build
 
-Docker is required.
+Docker is required. For the **hardware/production** image:
 
 ```sh
 curl -fsSL \
@@ -31,7 +71,13 @@ chmod 0755 /tmp/kas-container
 KAS_IMAGE_VERSION=4.7 /tmp/kas-container build kas/yoctocoupler-cm5.yml
 ```
 
-### Download the image built by GitHub Actions
+For the **dev/QEMU** image, use the independent profile instead:
+
+```sh
+KAS_IMAGE_VERSION=4.7 /tmp/kas-container build kas/yoctocoupler-cm5-qemu.yml
+```
+
+### Download the production image built by GitHub Actions
 
 The workflow uploads compressed WIC image output(s) and their small `.bmap`
 sidecars as the `yoctocoupler-cm5-preempt-rt` artifact. This downloads that

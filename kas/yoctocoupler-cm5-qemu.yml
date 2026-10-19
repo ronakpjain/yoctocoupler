@@ -1,7 +1,11 @@
+# Development image for QEMU: IGB networking and virtual CAN, no MCP251XFD.
 header:
   version: 14
   includes:
-    - kas/yoctocoupler-cm5.yml
+    - kas/yoctocoupler-common.yml
+
+target:
+  - yoctocoupler-image
 
 local_conf_header:
   yoctocoupler-qemu: |

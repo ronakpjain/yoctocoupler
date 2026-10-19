@@ -1,4 +1,4 @@
-SUMMARY = "Minimal real-time image for the Raspberry Pi Compute Module 5"
+SUMMARY = "Shared minimal real-time image for Yoctocoupler"
 DESCRIPTION = "A minimal headless systemd image for Raspberry Pi CM5 with PREEMPT_RT, GPIO PPS, static networking, and OpenSSH."
 
 LICENSE = "MIT"
@@ -7,7 +7,7 @@ require recipes-core/images/core-image-minimal.bb
 
 IMAGE_FEATURES += "ssh-server-openssh"
 IMAGE_INSTALL:append = " kernel-module-pps-gpio kernel-module-can-raw yoctocoupler-networkd"
-IMAGE_INSTALL:append = "${@bb.utils.contains('YOCTOCOUPLER_QEMU', '1', '', ' kernel-module-mcp251xfd', d)}"
+# Variant packages are selected by the independent production and QEMU KAS profiles.
 
 # Inject a key only when explicitly supplied; never create a default credential.
 YOCTOCOUPLER_SSH_PUBLIC_KEY ?= ""
