@@ -61,21 +61,26 @@ production artifact when flashing hardware.
 
 ## Build
 
-Docker is required. For the **hardware/production** image:
+Docker is required. `scripts/build-image.sh` downloads the pinned KAS wrapper
+on first use and verifies its SHA-256 checksum before building the
+**hardware/production** image:
 
 ```sh
-curl -fsSL \
-  https://raw.githubusercontent.com/siemens/kas/59e55e4f4e38d659e04de0018c9e5671a2a2fedb/kas-container \
-  -o /tmp/kas-container
-chmod 0755 /tmp/kas-container
-KAS_IMAGE_VERSION=4.7 /tmp/kas-container build kas/yoctocoupler-cm5.yml
+scripts/build-image.sh
 ```
 
-For the **dev/QEMU** image, use the independent profile instead:
+For the **dev/QEMU** image, select its independent profile. The script keeps its
+output in `build/qemu/` by default, separate from the production output in
+`build/`:
 
 ```sh
-KAS_IMAGE_VERSION=4.7 /tmp/kas-container build kas/yoctocoupler-cm5-qemu.yml
+scripts/build-image.sh --profile qemu
 ```
+
+The default KAS image version is 4.7. Override it with `KAS_IMAGE_VERSION`, or
+set `KAS_BUILD_DIR` to choose another build directory. `KAS_CONTAINER` can point
+to a local wrapper, but it must match the pinned checksum. The wrapper is cached
+under `${XDG_CACHE_HOME:-~/.cache}/yoctocoupler/`.
 
 ### Download the production image built by GitHub Actions
 
@@ -97,18 +102,17 @@ Use the resulting `.wic.bz2` directly with either helper below. The workflow
 runs the Yocto build on Ubuntu; this macOS support is for post-processing and
 flashing the downloaded image.
 
-To install a root SSH public key, set it before building. The `kas-container`
-wrapper requires it to be explicitly forwarded into the build container:
+To install a root SSH public key, set it before building. The script forwards a
+non-empty `YOCTOCOUPLER_SSH_PUBLIC_KEY` into the build container automatically:
 
 ```sh
 export YOCTOCOUPLER_SSH_PUBLIC_KEY="$(cat ~/.ssh/id_ed25519.pub)"
-KAS_IMAGE_VERSION=4.7 /tmp/kas-container \
-  --runtime-args "-e YOCTOCOUPLER_SSH_PUBLIC_KEY" \
-  build kas/yoctocoupler-cm5.yml
+scripts/build-image.sh
 ```
 
-Without a key, the root account remains locked. Build artifacts are written to
-`build/tmp/deploy/images/raspberrypi5/`.
+Without a key, the root account remains locked. Production artifacts are written
+to `build/tmp/deploy/images/raspberrypi5/`; QEMU artifacts are written under
+`build/qemu/tmp/deploy/images/raspberrypi5/` by default.
 
 ### Add a key to an already-built image (no rebuild)
 
@@ -214,8 +218,21 @@ if needed. To have the helper install its Homebrew prerequisites first, run
 is scoped to the helper; do not export it globally when running the image
 runner, which uses macOS's native `stat -f` syntax.
 
-Boot the newest unmodified WIC image with its current deployment kernel, or
-pass a specific image together with the kernel built for that image:
+To use the development/QEMU profile (IGB + virtual CAN), build and boot its
+image with the matching kernel from the profile's separate output directory:
+
+```sh
+scripts/build-image.sh --profile qemu
+QEMU_DEPLOY=build/qemu/tmp/deploy/images/raspberrypi5
+QEMU_IMAGE=$(find "$QEMU_DEPLOY" -maxdepth 1 -type f \
+  \( -name 'yoctocoupler-image-*.wic' -o -name 'yoctocoupler-image-*.wic.bz2' \) \
+  -print -quit)
+scripts/run-image-in-qemu.sh --kernel "$QEMU_DEPLOY/Image" "$QEMU_IMAGE"
+```
+
+The runner can also boot the newest unmodified WIC image from the default
+production build directory, or a specific image paired with its matching
+kernel:
 
 ```sh
 scripts/run-image-in-qemu.sh
