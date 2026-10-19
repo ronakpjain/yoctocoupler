@@ -197,9 +197,27 @@ The input image is left untouched. For explicit WIC paths, it requires
 newer kernel and mismatched modules. This is not a test of the CM5 carrier's
 Ethernet, GPIO/PPS wiring, or physical-board latency.
 
-The hardware image intentionally omits the QEMU-only `kernel-module-igb`.
+### CAN support
+
+Both image variants include SocketCAN raw sockets and the `mcp251xfd` driver
+for MCP2517FD/MCP2518FD SPI controllers. On hardware, supply a carrier-specific
+device tree/overlay describing the SPI bus, chip select, interrupt GPIO, and
+oscillator; no wiring-specific overlay is enabled by default. The driver loads
+through device discovery. Configure the resulting `can0` with the bitrates and
+CAN FD settings required by your bus before using it.
+
+The development/QEMU variant additionally includes and autoloads `vcan`.
+systemd-networkd creates and brings up `vcan0` at boot, without an IP address.
+Use `vcan0` for application-level SocketCAN tests; it does not emulate SPI,
+interrupts, physical CAN arbitration/timing, or the MCP2518FD hardware.
+Configure your application to use `can0` on hardware and `vcan0` in QEMU.
+After boot, verify with `ip -details link show vcan0` and `lsmod | grep vcan`.
+CAN utilities such as `cansend`/`candump` are not installed by default.
+
+The hardware image intentionally omits the QEMU-only `kernel-module-igb`,
+`kernel-module-vcan`, and virtual-interface configuration.
 The workflow also publishes a separate `yoctocoupler-cm5-qemu-preempt-rt`
-artifact containing that module and its matching kernel `Image`; the normal
+artifact containing IGB, the virtual CAN setup, and its matching kernel `Image`; the normal
 hardware artifact remains unchanged. Download the QEMU artifact, add your
 public key to a copy, and boot it with SSH forwarding:
 
